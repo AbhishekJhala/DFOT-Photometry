@@ -1,6 +1,7 @@
 ''''
 The modules required for the reduction of astronomical images and performing aperture photometry on the selected sources. 
-All the modules except one use pure PYTHON packages, mostly derived from the astropy project. One of the modules still uses IRAF which we'll upgrade soon.
+All the modules except one use pure PYTHON packages, mostly derived from the astropy project. 
+One of the modules still uses IRAF which we'll upgrade soon.
 
 This program contains functions that perform:
 1. BIAS correction.
@@ -52,7 +53,7 @@ from photutils import Background2D, MedianBackground, DAOStarFinder
 from photutils.utils import calc_total_error
 #from photutils.detection import findstars
 
-def view_image(name,time):
+def view_image(name,time,saveplot=False):
     '''
     This module is meant for viewinga large number of images. The images
     can be seen as an animation. Will be helpful for large datasets as it doesn't
@@ -60,21 +61,24 @@ def view_image(name,time):
     INPUT:
     name: The name of the image file.
     time: No. of seconds you'd like to see the image on screen
+    saveplot : bool, if true save the plot in png format
 
     OUTPUT:
 
     the images seen as animation, with a gap of 1 second between successive images.
     '''
+    filename=name.replace('.fits','')
     ims=[]
     data=fits.open(name)
     image=data[0].data
     head=data[0].header
-
-    mean,std=np.mean(image),np.std(image)
-    #image=image/np.median(image)
-    im=plt.imshow(image,cmap='gray_r',origin='lower',vmin=mean-2*std,vmax=mean+2*std)
-    #plt.scatter(124, 146, s=400,edgecolor='red',linewidth=1, facecolor='none')
+    median,std=np.median(image),np.std(image) #median and std
+    plt.figure(figsize=(10,10)) #figure size (10,10)
+    im=plt.imshow(image,cmap='gray_r',origin='lower',vmin=median-2*std,vmax=median+2*std) #median clipping
+    plt.title(name)
     ims.append([im])
+    if savefig==True:
+        plt.savefig(filename+'.png') #save figure
     plt.pause(time)
     plt.clf()
 
@@ -101,9 +105,6 @@ def clean_the_images(path,filename):
     gain = 2 * u.electron / u.adu  # gain and readout noise are properties of the CCD and will change for different CCDs.
     readnoise = 7.5 * u.electron
 
-    ra=input('Enter the RA of the source:   ')
-    dec=input('Enter the DEC of the source: ')
-
 
     bias_files = sorted(glob(os.path.join(directory,'bias*.fits')))
     biaslist = []
@@ -117,11 +118,11 @@ def clean_the_images(path,filename):
     masterbias.write('masterbias.fits', overwrite=True)
     mbias=ccdproc.CCDData.read('masterbias.fits',unit='adu')
     print('Master bias generated')
-    print(" Mean and median of the masterbias: ",np.mean(masterbias), np.median(masterbias))
+    print("Median and std of the masterbias: ",np.median(masterbias), np.std(masterbias))
 
 
 
-    flat_files=sorted(glob(os.path.join(directory,'flat*.fits')))
+    flat_files=sorted(glob(os.path.join(directory,'flat*.fits'))) #change it for different filters
     flatlist = []
     for j in range(0,len(flat_files)):
         flat=ccdproc.CCDData.read(flat_files[j],unit='adu')
