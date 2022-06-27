@@ -21,7 +21,7 @@ This program contains functions that perform:
 15. Plot the light curves using matplotlib.
 
 written by:
-Vivek, Kiran and Dimple at ARIES Nainital.
+Vivek, Kiran, Dimple and Abhishek at ARIES Nainital.
 
 This was written keeping the 1.3m DFOT in mind and the customizations are needed for various telescopes/datasets if required.
 '''
@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.time import Time
 from glob import glob
-#from astroquery.astrometry_net import AstrometryNet
+from astroquery.astrometry_net import AstrometryNet
 from astropy.wcs import WCS
 import astroalign as aa
 #from pyraf import iraf
@@ -53,14 +53,13 @@ from photutils import Background2D, MedianBackground, DAOStarFinder
 from photutils.utils import calc_total_error
 #from photutils.detection import findstars
 
-def view_image(name,time,saveplot=False):
+def view_image(name,saveplot=False):
     '''
     This module is meant for viewinga large number of images. The images
     can be seen as an animation. Will be helpful for large datasets as it doesn't
     require a lot of pointing and clicking.
     INPUT:
     name: The name of the image file.
-    time: No. of seconds you'd like to see the image on screen
     saveplot : bool, if true save the plot in png format
 
     OUTPUT:
@@ -69,32 +68,38 @@ def view_image(name,time,saveplot=False):
     '''
     filename=name.replace('.fits','')
     ims=[]
-    data=fits.open(name)
-    image=data[0].data
-    head=data[0].header
+    hdu=fits.open(name)
+    temp_image=hdu[0].data
+    if len(temp_image.shape)==3:
+        image=temp_image[0]
+    else:
+        image=temp_image
+    head=hdu[0].header
     median,std=np.median(image),np.std(image) #median and std
     plt.figure(figsize=(10,10)) #figure size (10,10)
-    im=plt.imshow(image,cmap='gray_r',origin='lower',vmin=median-2*std,vmax=median+2*std) #median clipping
+    im=plt.imshow(image,aspect='equal',cmap='gray',origin='lower',vmin=median-2*std,vmax=median+2*std) #median clipping
     plt.title(name)
+    plt.colorbar()
     ims.append([im])
-    if savefig==True:
-        plt.savefig(filename+'.png') #save figure
-    plt.pause(time)
-    plt.clf()
+    if saveplot==True:
+        plt.savefig(filename+'.png',facecolor='white',edgecolor='white') #save figure
+    #plt.pause(time) #not reuired
+    plt.show()
 
 
 
 
-def clean_the_images(path,filename):
+def clean_the_images(path,bias_name,flat_name,sci_name):
     '''
     This module is meant for cleaning the images. The tasks to be included are: bias correction,
     flat correction, trimming, overscan as well as the cosmic ray removal from the science cases.
     (For the time we are skipping the overscan and trimming part.
 
     INPUT:
-    path: The directory where the images are kept (string)
-    filename: The first few characters and the extension of the images (string). Example:
-    j0946*fits, HD1104*fits etc.
+    path : The directory where the images are kept (string)
+    bias_name : Bias file name e.g 'bias*.fits', 'Bias*.fits' etc. (string)
+    flat_name : Flat file name with filters if used e.g. 'flat*.fits', 'flat_r*.fits' etc. (string)
+    sci_name : Science target file name with filters if used e.g. 'sci*.fits', 'sci_r*.fits' etc. (string)
 
     OUTPUT:
 
@@ -106,7 +111,7 @@ def clean_the_images(path,filename):
     readnoise = 7.5 * u.electron
 
 
-    bias_files = sorted(glob(os.path.join(directory,'bias*.fits')))
+    bias_files = sorted(glob(os.path.join(directory,bias_name)))
     biaslist = []
     for i in range (0,len(bias_files)):
         data= ccdproc.CCDData.read(bias_files[i],unit='adu')
@@ -122,7 +127,7 @@ def clean_the_images(path,filename):
 
 
 
-    flat_files=sorted(glob(os.path.join(directory,'flat*.fits'))) #change it for different filters
+    flat_files=sorted(glob(os.path.join(directory,flat_name))) #change it for different filters
     flatlist = []
     for j in range(0,len(flat_files)):
         flat=ccdproc.CCDData.read(flat_files[j],unit='adu')
@@ -135,6 +140,7 @@ def clean_the_images(path,filename):
     masterflat = ccdproc.combine(flatlist,method='median', scale=inv_median,
                                  sigma_clip=True, sigma_clip_low_thresh=5, sigma_clip_high_thresh=5,
                                  sigma_clip_func=np.ma.median, sigma_clip_dev_func=mad_std)
+    
     masterflat.write('masterflat.fits', overwrite=True)
     mflat=ccdproc.CCDData.read('masterflat.fits',unit='adu')
     print('Master flat generated')
@@ -142,7 +148,7 @@ def clean_the_images(path,filename):
 
 
 
-    file_names = sorted(glob(os.path.join(directory,filename)))
+    file_names = sorted(glob(os.path.join(directory,sci_name)))
     for i in range(0,len(file_names)):
         image=ccdproc.CCDData.read(file_names[i],unit='adu')
         header=fits.getheader(file_names[i],0)
@@ -155,43 +161,47 @@ def clean_the_images(path,filename):
 
         fits.writeto(clean_file+'_cleaned.fits',cr_cleaned,header,overwrite=True)
         print('Image no-%i has been cleaned'%i)
-
-
-def align_the_images(path,filename,ref_image):
-
-
-
-    '''
-    This function is meant for alignment of the images with respect to a reference image. To do this task we are using the astro-align package.
-
-    INPUT:
-
-    path: The directory where the images are kept (string)
-    filename: The first few characters and the extension of the images (string). Example:
-    j0946*fits, HD1104*fits etc.
-    ref_image: Reference image which will be used to align the images.
-
-    OUTPUT:
-
-    aligned images.
-
+        
+def astrometry(clean_file,key='ezrygpqtnpxfjjlg'):
     '''
 
 
+    Parameters
+    ----------
+    clean_file : list
+        List of file names for astrometry.
+    api_key : string, optional
+        Astrometry API key. The default is 'ezrygpqtnpxfjjlg'.
 
-    nfiles=sorted(glob(path+filename))
-    image_data=fits.open(path+ref_image)
-    reference_image=image_data[0].data
-    for i in range(len(nfiles)):
-        image_data=fits.open(nfiles[i])
-        source_image=image_data[0].data
-        header=image_data[0].header
-        image_aligned,footprint=aa.register(source_image,reference_image)
+    Returns
+    -------
+    WCS added fits file.
 
-        aligned_file=nfiles[i].replace('.fits','')
-        fits.writeto(aligned_file+'_aligned'+'.fits',image_aligned,header,overwrite=True)
+    '''
+    
+    
+    ast=AstrometryNet()
+    ast.api_key=key #add api key
+    
+    wcs_list=[] #empty wcs list for output
+    
+    for file in clean_file:
+        wcs_astrometry=ast.solve_from_image(file)
+        wcs_list.append(wcs_astrometry)
+        
+    print('Astrometry of {} files completed.'.format(len(clean_file)))
+    
+    for i in range(len(clean_file)):
+        temp_hdu=fits.open(clean_file[i])
+        
+        filename=clean_file[i].replace('.fits','')
+        
+        temp_hdu[0].header.update(wcs_list[i].to_header())
+        
+        temp_hdu.writeto(filename+'_ast.fits',overwrite=True)
+        
+    print('WCS added {} files have been saved.'.format(len(clean_file)))
 
-        print('No. %i done'%i)
 
 
 
